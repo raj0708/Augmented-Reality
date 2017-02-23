@@ -1,0 +1,220 @@
+<html>
+<head>
+<title>Street View side-by-side</title>
+<meta name="viewport" content="initial-scale=1.0">
+<meta charset="utf-8">
+<link rel="stylesheet" href="Stylesheet.css">
+</head>
+<!--<link rel="stylesheet" href="./OpenLayers.v3.12.1-dist/v3.12.1-dist/ol.css" type="text/css">-->
+<!--<script>src ="./v3.14.1/v3.14.1/build/ol.js"</script>-->
+<!--<script src ="https://maps.googleapis.com/maps/api/js"></script>-->
+<script src ="https://maps.googleapis.com/maps/api/js?key=AIzaSyDhNLyL0jV4ScTovafayOJGfzE1AOcQDf4"></script>
+<script type="text/javascript" src="jquery-1.11.3.js"></script>
+<script src ="./three.js-master/three.js-master/build/three.js"></script>
+<script src ="./three.js-master/three.js-master/build/three.min.js"></script>
+<script src ="./three.js-master/three.js-master/examples/js/controls/OrbitControls.js"></script>
+<script src ="./three.js-master/three.js-master/examples/js/renderers/Projector.js"></script>
+<script type="text/javascript" src="math.min.js"></script>
+<script type="text/javascript" src="UpdatedWebgl.js"></script>
+
+<script type="text/javascript">
+
+
+var renderer ={};
+renderer = new THREE.WebGLRenderer( {antialias:true} );
+var camera = {};
+camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 1, 1000);
+var controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+var line= null;
+var circle = null; 
+var markers = new Array();
+
+var marker, point, map, Lookdir;
+//var origin = {lat:50.832786, lng:12.919078};
+
+var degrees = Math.PI / 180.0;
+var radiusPoles = 6378137.0;
+var radiusEquator = 6378137.0;
+//var radiusPoles = 6356752.3;
+
+
+
+				
+function pointGoogleMaps(x, y, circle)
+	{
+
+		var cosLat = Math.cos(circle.getCenter().lat() * degrees);
+		var sinLat = Math.sin(circle.getCenter().lat() * degrees);
+
+		var xSphere = radiusEquator * cosLat;
+		var ySphere = 0;
+		var zSphere = radiusPoles * sinLat;
+		var rSphere = Math.sqrt(xSphere*xSphere + ySphere*ySphere + zSphere*zSphere);
+
+		xSphere = rSphere * cosLat - y * sinLat;
+		ySphere = -x;
+		zSphere = rSphere * sinLat + y * cosLat;
+		zSphere = zSphere/rSphere;
+		
+		var latitude;   //sin interval [-1, 1]
+		if(zSphere >= 1)
+			latitude = 90.0;
+		else if(zSphere <= -1)
+			latitude = -90.0;
+		else
+			latitude = Math.asin(zSphere) / degrees;
+			
+		var longitude = circle.getCenter().lng() + Math.atan2(ySphere, xSphere) / degrees;
+		
+		return {lat:latitude, lng:longitude};
+		
+	};
+
+
+$.ajax({
+		type: "GET",
+		url: "marker.php",
+		dataType: "json",
+		success: function(response)
+		    {
+			    //alert(JSON.stringify(response));
+			    //origin.push(response);
+			    //origin = response;
+					var origin = {lat:parseFloat(response[0].lat), lng: parseFloat(response[0].lng)};
+				
+					map = new google.maps.Map(document.getElementById('map'), {
+								center: origin,
+								zoom: 14,
+								});
+				
+								
+				for(i=0; i<response.length; i++)
+					{
+					
+					var center = {lat: parseFloat(response[i].lat), lng: parseFloat(response[i].lng)};
+					
+					// marker = new marker;
+					marker = new google.maps.Marker({
+					position: center,
+					//position: new google.maps.LatLng(parseFloat(response[i].lat), parseFloat(response[i].lng)), 
+					map: map,
+					clickable: true,
+					url: parseFloat(response[i].ID),
+					title: 'Click to load corresponding location'
+					});
+					markers.push(marker);
+					
+					
+					
+					//Attaching click event to marker
+					google.maps.event.addListener(marker, 'click', (function(marker)
+					{
+						return function() {
+						
+					
+						$(".spritelabel").remove();
+						$(".Webglbox").remove();
+						
+						
+						if(circle != null) {
+						circle.setMap(null);
+						delete circle; 
+						circle = null;
+						}
+						
+						circle = new google.maps.Circle({
+						strokeColor: '#FF0000',
+						strokeOpacity: 0.8,
+						strokeWeight: 2,
+						fillColor: '#FFFFFF',
+						fillOpacity: 0.01,
+						center: marker.getPosition(), //new google.maps.LatLng(pointGoogleMaps(0, 0, center)),
+						map: map,
+						clickable: true,
+						radius: 1000  //Radius in meters 
+						});
+						
+						point = {lat:circle.getCenter().lat(), lng:circle.getCenter().lng()};
+						  
+						var startpoint	= pointGoogleMaps(circle.getRadius() * Math.cos(-camera.fov * degrees),
+														  circle.getRadius() * Math.sin(-camera.fov * degrees), circle);
+
+						var endpoint    = pointGoogleMaps(circle.getRadius() * Math.cos(camera.fov * degrees),
+														  circle.getRadius() * Math.sin(camera.fov * degrees), circle);
+					
+						if(line !=null) { 
+						line.setMap(null);
+						delete line;
+						line = null;
+						}
+						
+						line = new google.maps.Polyline({
+						path: [startpoint, point, endpoint],
+						geodesic: true,  //By setting it to true the distance is cal in meters
+						strokeColor: '#0000FF',
+						strokeOpacity: 0.8,
+						strokeWeight: 2,			
+						map: map
+						});
+						
+						
+						$.ajax({
+						type: "POST",
+						url: "api.php",
+						data: {ID: marker.url},
+						dataType: "json",
+						success: function(response)
+							{
+								//alert(response);
+								//console.log(markers);
+								root = document.getElementById("WebGL");
+								createsphere(response, root);
+							}					
+						});
+						
+					  }
+					   
+					})(marker));
+					
+					google.maps.event.addListener(map, 'zoom_changed', function() 
+					{
+						var zoom = map.getZoom();
+						if(zoom >14 && zoom <=17){
+							
+							controls.minDistance = 4;
+							controls.maxDistance = 1.5;	 
+						} 
+						else if(zoom >=18 && zoom<=21)
+						{
+							controls.minDistance = 1.4;
+							controls.maxDistance = 0.1;
+						}
+						else
+						{
+							controls.minDistance = 5;
+							controls.maxDistance = 5;
+						}
+						
+					});  
+					
+						
+					}	
+				
+			     
+			}
+		});
+
+</script>
+
+<body>
+<div id = "map"></div>
+<div id = "WebGL"></div>
+	<div class ="spritelabel">
+	</div>
+	<div class = "Webglbox">
+	<unit_Lng></unit_Lng></div>	
+</body>
+</html>
+	
+	
